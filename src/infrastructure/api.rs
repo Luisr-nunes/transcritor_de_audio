@@ -1,22 +1,16 @@
-use axum::{
-    extract::{Multipart, State},
-    routing::post,
-    Router,
+use axum::{routing::{get, post}, Router};
+use crate::infrastructure::http::handler::{
+    AppState,
+    get_transcription_handler,
+    list_transcriptions_handler,
+    upload_handler,
 };
-use std::sync::Arc;
 
-pub async fn app() -> Router {
+/// Constrói o roteador principal da aplicação.
+pub fn build_router(state: AppState) -> Router {
     Router::new()
-        .route("/upload", post(upload_handler))
-}
-
-async fn upload_handler(mut multipart: Multipart) -> &'static str {
-    while let Some(field) = multipart.next_field().await.unwrap() {
-        let name = field.name().unwrap().to_string();
-        let data = field.bytes().await.unwrap();
-        
-        println!("Recebido arquivo: {} com {} bytes", name, data.len());
-    
-    }
-    "Arquivo recebido com sucesso!"
+        .route("/upload",              post(upload_handler))
+        .route("/transcriptions",      get(list_transcriptions_handler))
+        .route("/transcriptions/:id",  get(get_transcription_handler))
+        .with_state(state)
 }
