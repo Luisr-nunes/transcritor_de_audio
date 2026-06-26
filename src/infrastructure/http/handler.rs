@@ -7,6 +7,7 @@ use axum::{
 use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
+use tracing::error;
 
 use crate::{
     application::transcribe::transcribe,
@@ -16,25 +17,28 @@ use crate::{
 pub type AppState = Arc<TranscriptionRepository>;
 
 /// POST /upload
-/// Recebe um arquivo de áudio via multipart/form-data e inicia a transcrição.
-///
-/// Campo esperado: `file` (bytes do áudio) e opcionalmente `language` (ex: "pt").
 pub async fn upload_handler(
     State(repo): State<AppState>,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
     let mut audio_bytes: Option<Vec<u8>> = None;
-    let mut filename    = "audio".to_string();
+    let mut filename = "audio".to_string();
     let mut language: Option<String> = None;
 
     while let Ok(Some(field)) = multipart.next_field().await {
         match field.name().unwrap_or("") {
             "file" => {
-                filename = field
-                    .file_name()
-                    .unwrap_or("audio.wav")
-                    .to_string();
-                audio_bytes = field.bytes().await.ok().map(|b| b.to_vec());
+                filename = field.file_name().unwrap_or("audio.wav").to_string();
+                match field.bytes().await {
+                    Ok(b) => audio_bytes = Some(b.to_vec()),
+                    Err(e) => {
+                        error!("Falha ao ler bytes do campo 'file': {e}");
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(json!({ "error": format!("Falha ao ler arquivo: {e}") })),
+                        );
+                    }
+                }
             }
             "language" => {
                 language = field.text().await.ok();
@@ -45,10 +49,16 @@ pub async fn upload_handler(
 
     let bytes = match audio_bytes {
         Some(b) if !b.is_empty() => b,
-        _ => {
+        Some(_) => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(json!({ "error": "Campo 'file' ausente ou vazio." })),
+                Json(json!({ "error": "Arquivo enviado está vazio." })),
+            );
+        }
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "Campo 'file' não encontrado no formulário." })),
             );
         }
     };
@@ -58,15 +68,17 @@ pub async fn upload_handler(
             StatusCode::OK,
             Json(json!({ "status": "completed", "transcription": text })),
         ),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "status": "failed", "error": e.to_string() })),
-        ),
+        Err(e) => {
+            error!("Erro na transcrição: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "status": "failed", "error": e.to_string() })),
+            )
+        }
     }
 }
 
 /// GET /transcriptions/:id
-/// Retorna o resultado de uma transcrição pelo ID.
 pub async fn get_transcription_handler(
     State(repo): State<AppState>,
     Path(id): Path<String>,
@@ -103,7 +115,6 @@ pub async fn get_transcription_handler(
 }
 
 /// GET /transcriptions
-/// Lista todas as transcrições.
 pub async fn list_transcriptions_handler(
     State(repo): State<AppState>,
 ) -> impl IntoResponse {

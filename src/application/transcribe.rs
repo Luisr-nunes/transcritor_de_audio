@@ -9,9 +9,6 @@ use crate::{
     },
 };
 
-/// Caminho padrão para o modelo Whisper (pode ser sobrescrito via env var).
-const DEFAULT_MODEL: &str = "assets/ggml-base.bin";
-
 /// Erros do use case de transcrição.
 #[derive(Debug, thiserror::Error)]
 pub enum TranscribeError {
@@ -22,15 +19,35 @@ pub enum TranscribeError {
     Whisper(#[from] WhisperError),
 }
 
+/// Resolve o caminho do modelo Whisper:
+/// 1. Argumento explícito
+/// 2. Variável de ambiente WHISPER_MODEL
+/// 3. Pasta `assets/` relativa ao executável
+/// 4. Pasta `assets/` relativa ao diretório de trabalho (fallback)
+fn resolve_model_path(explicit: Option<&str>) -> String {
+    if let Some(p) = explicit {
+        return p.to_string();
+    }
+    if let Ok(env) = std::env::var("WHISPER_MODEL") {
+        return env;
+    }
+
+    // Relativo ao executável (funciona em target/debug e release)
+    if let Ok(exe) = std::env::current_exe() {
+        let candidate = exe
+            .parent()
+            .map(|d| d.join("assets").join("ggml-base.bin"))
+            .filter(|p| p.exists());
+        if let Some(p) = candidate {
+            return p.to_string_lossy().to_string();
+        }
+    }
+
+    // Relativo ao diretório de trabalho (cargo run a partir da raiz do projeto)
+    "assets/ggml-base.bin".to_string()
+}
+
 /// Use case: recebe bytes de áudio, transcreve e persiste o resultado.
-///
-/// # Fluxo
-/// 1. Cria registro no banco com status PENDING.
-/// 2. Marca como PROCESSING.
-/// 3. Decodifica áudio → samples PCM f32.
-/// 4. Transcreve via Whisper.
-/// 5. Persiste o texto e marca COMPLETED.
-///    Em caso de erro, marca FAILED.
 pub async fn transcribe(
     repo: Arc<TranscriptionRepository>,
     filename: String,
@@ -52,20 +69,19 @@ pub async fn transcribe(
         .await
         .map_err(|e| TranscribeError::Repository(e.to_string()))?;
 
-    // 3 & 4. Resolve caminho do modelo, decodifica e transcreve
-    let model = model_path
-        .as_deref()
-        .unwrap_or(DEFAULT_MODEL);
+    // 3. Resolve modelo
+    let model = resolve_model_path(model_path.as_deref());
+    info!("Usando modelo: {model}");
 
+    // 4. Decodifica e transcreve (síncrono — roda na thread atual)
     let result = (|| -> Result<String, TranscribeError> {
         let samples = decode_audio_to_samples(&audio_bytes)?;
-        let text    = transcribe_audio(model, &samples, language.as_deref())?;
+        let text    = transcribe_audio(&model, &samples, language.as_deref())?;
         Ok(text)
     })();
 
     match result {
         Ok(text) => {
-            // 5. Persiste resultado
             repo.save_result(id, &text)
                 .await
                 .map_err(|e| TranscribeError::Repository(e.to_string()))?;

@@ -19,9 +19,9 @@ serde     = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # Processamento de Áudio (Whisper)
-# Requer whisper.cpp compilado no sistema.
-# Baixe o modelo em: https://huggingface.co/ggerganov/whisper.cpp
-whisper-rs = "0.16.0"
+# API 0.16: state.as_iter() -> impl Iterator<Item = WhisperSegment>
+# WhisperSegment implementa Display para o texto transcrito.
+whisper-rs = "0.16"
 
 # Tratamento de erros
 thiserror = "1.0"

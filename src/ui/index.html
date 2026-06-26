@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Transcritor de Áudio</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --border:    #2a2d3e;
+      --accent:    #7c6af7;
+      --accent-h:  #9d8fff;
+      --text:      #e2e4f0;
+      --muted:     #6b7094;
+      --green:     #4ade80;
+      --yellow:    #facc15;
+      --red:       #f87171;
+      --radius:    12px;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px 60px;
+    }
+
+    header { text-align: center; margin-bottom: 40px; }
+    header h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.5px; }
+    header h1 span { color: var(--accent); }
+    header p { color: var(--muted); margin-top: 6px; font-size: 0.95rem; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      width: 100%;
+      max-width: 660px;
+      margin-bottom: 24px;
+    }
+    .card h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 20px;
+    }
+
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 36px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(124,106,247,0.05);
+    }
+    .drop-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    .drop-zone .icon { font-size: 2.2rem; margin-bottom: 10px; }
+    .drop-zone p { color: var(--muted); font-size: 0.9rem; }
+    .drop-zone p strong { color: var(--text); }
+    #file-name { margin-top: 10px; font-size: 0.85rem; color: var(--accent); min-height: 18px; }
+
+    .row { display: flex; gap: 12px; margin-top: 18px; align-items: flex-end; }
+    .field { flex: 1; }
+    label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 6px; font-weight: 500; }
+    select {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 9px 12px;
+      font-size: 0.9rem;
+      appearance: none;
+      cursor: pointer;
+    }
+    select:focus { outline: none; border-color: var(--accent); }
+
+    button {
+      padding: 10px 22px;
+      border-radius: 8px;
+      border: none;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .btn-primary { background: var(--accent); color: #fff; white-space: nowrap; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-h); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.8rem;
+      padding: 6px 14px;
+    }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+    #status-bar {
+      margin-top: 18px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      display: none;
+      align-items: center;
+      gap: 10px;
+    }
+    #status-bar.info    { display: flex; background: rgba(124,106,247,0.12); color: var(--accent); }
+    #status-bar.success { display: flex; background: rgba(74,222,128,0.10); color: var(--green); }
+    #status-bar.error   { display: flex; background: rgba(248,113,113,0.10); color: var(--red); }
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #result-box { margin-top: 18px; display: none; }
+    #result-box label { margin-bottom: 8px; }
+    #result-text {
+      width: 100%;
+      min-height: 100px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 12px;
+      font-size: 0.9rem;
+      line-height: 1.6;
+      resize: vertical;
+      font-family: inherit;
+    }
+    .result-actions { margin-top: 10px; display: flex; gap: 8px; }
+
+    #history-list { display: flex; flex-direction: column; gap: 10px; }
+    .hist-item {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 4px 12px;
+      align-items: center;
+    }
+    .hist-name { font-size: 0.9rem; font-weight: 500; }
+    .hist-preview { grid-column: 1; font-size: 0.8rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .badge { font-size: 0.72rem; font-weight: 600; padding: 3px 9px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.05em; grid-row: 1 / 3; }
+    .badge.COMPLETED  { background: rgba(74,222,128,0.15);  color: var(--green); }
+    .badge.PENDING    { background: rgba(250,204,21,0.15);   color: var(--yellow); }
+    .badge.PROCESSING { background: rgba(124,106,247,0.15);  color: var(--accent); }
+    .badge.FAILED     { background: rgba(248,113,113,0.15);  color: var(--red); }
+    #empty-state { text-align: center; color: var(--muted); padding: 30px 0; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🎙️ Transcritor de <span>Áudio</span></h1>
+  <p>Suporta WAV, MP3, MP4, OGG, FLAC e WebM</p>
+</header>
+
+<div class="card">
+  <h2>Novo Upload</h2>
+
+  <div class="drop-zone" id="drop-zone">
+    <input type="file" id="audio-input" accept="audio/*,.wav,.mp3,.mp4,.m4a,.ogg,.flac,.webm,.weba" />
+    <div class="icon">🎵</div>
+    <p><strong>Clique ou arraste</strong> um arquivo de áudio aqui</p>
+    <p style="margin-top:4px;font-size:0.8rem">WAV · MP3 · MP4 · OGG · FLAC · WebM</p>
+    <div id="file-name"></div>
+  </div>
+
+  <div class="row">
+    <div class="field">
+      <label for="lang-select">Idioma</label>
+      <select id="lang-select">
+        <option value="pt">Português (pt)</option>
+        <option value="en">English (en)</option>
+        <option value="es">Español (es)</option>
+        <option value="">Auto-detectar</option>
+      </select>
+    </div>
+    <button class="btn-primary" id="upload-btn" disabled>Transcrever</button>
+  </div>
+
+  <div id="status-bar">
+    <div class="spinner" id="spinner" style="display:none"></div>
+    <span id="status-text"></span>
+  </div>
+
+  <div id="result-box">
+    <label>Transcrição</label>
+    <textarea id="result-text" readonly></textarea>
+    <div class="result-actions">
+      <button class="btn-ghost" id="copy-btn">📋 Copiar</button>
+      <button class="btn-ghost" id="download-btn">⬇️ Baixar .txt</button>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="display:flex;justify-content:space-between;align-items:center">
+    Histórico
+    <button class="btn-ghost" id="refresh-btn">↻ Atualizar</button>
+  </h2>
+  <div id="history-list">
+    <div id="empty-state">Nenhuma transcrição encontrada.</div>
+  </div>
+</div>
+
+<script>
+  const dropZone   = document.getElementById('drop-zone');
+  const audioInput = document.getElementById('audio-input');
+  const fileLabel  = document.getElementById('file-name');
+  const uploadBtn  = document.getElementById('upload-btn');
+  const langSelect = document.getElementById('lang-select');
+  const statusBar  = document.getElementById('status-bar');
+  const statusText = document.getElementById('status-text');
+  const spinner    = document.getElementById('spinner');
+  const resultBox  = document.getElementById('result-box');
+  const resultText = document.getElementById('result-text');
+  const copyBtn    = document.getElementById('copy-btn');
+  const dlBtn      = document.getElementById('download-btn');
+  const refreshBtn = document.getElementById('refresh-btn');
+  const histList   = document.getElementById('history-list');
+
+  let selectedFile = null;
+
+  audioInput.addEventListener('change', () => {
+    if (audioInput.files[0]) selectFile(audioInput.files[0]);
+  });
+
+  dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    if (e.dataTransfer.files[0]) selectFile(e.dataTransfer.files[0]);
+  });
+
+  function selectFile(file) {
+    selectedFile = file;
+    fileLabel.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+    uploadBtn.disabled = false;
+    setStatus('', '');
+    resultBox.style.display = 'none';
+  }
+
+  uploadBtn.addEventListener('click', async () => {
+    if (!selectedFile) return;
+    uploadBtn.disabled = true;
+    setStatus('info', 'Enviando… aguarde, a transcrição pode levar alguns segundos.');
+    spinner.style.display = 'block';
+    resultBox.style.display = 'none';
+
+    const fd = new FormData();
+    fd.append('file', selectedFile, selectedFile.name);
+    const lang = langSelect.value;
+    if (lang) fd.append('language', lang);
+
+    try {
+      const res  = await fetch('/upload', { method: 'POST', body: fd });
+      const data = await res.json();
+
+      if (res.ok && data.transcription !== undefined) {
+        if (data.transcription.trim().length === 0) {
+          setStatus('error', '⚠️ Nenhuma fala detectada no áudio. Verifique o arquivo.');
+        } else {
+          setStatus('success', '✅ Transcrição concluída!');
+          resultText.value = data.transcription;
+          resultBox.style.display = 'block';
+          loadHistory();
+        }
+      } else {
+        setStatus('error', '❌ ' + (data.error || JSON.stringify(data)));
+      }
+    } catch (err) {
+      setStatus('error', '❌ Falha na requisição: ' + err.message);
+    } finally {
+      spinner.style.display = 'none';
+      uploadBtn.disabled = false;
+    }
+  });
+
+  function setStatus(type, msg) {
+    statusBar.className = type;
+    statusText.textContent = msg;
+    if (!type) statusBar.style.display = 'none';
+  }
+
+  copyBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(resultText.value);
+    copyBtn.textContent = '✅ Copiado!';
+    setTimeout(() => copyBtn.textContent = '📋 Copiar', 2000);
+  });
+
+  dlBtn.addEventListener('click', () => {
+    const blob = new Blob([resultText.value], { type: 'text/plain' });
+    const url  = URL.createObjectURL(blob);
+    const a    = Object.assign(document.createElement('a'), { href: url, download: 'transcricao.txt' });
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  refreshBtn.addEventListener('click', loadHistory);
+
+  async function loadHistory() {
+    try {
+      const res  = await fetch('/transcriptions');
+      const list = await res.json();
+      renderHistory(Array.isArray(list) ? list : []);
+    } catch { renderHistory([]); }
+  }
+
+  function renderHistory(items) {
+    if (!items.length) {
+      histList.innerHTML = '<div id="empty-state">Nenhuma transcrição encontrada.</div>';
+      return;
+    }
+    histList.innerHTML = items.map(t => `
+      <div class="hist-item">
+        <div class="hist-name">${esc(t.filename)}</div>
+        <span class="badge ${t.status}">${t.status}</span>
+        <div class="hist-preview">${t.content ? esc(t.content.slice(0, 120)) + (t.content.length > 120 ? '…' : '') : '—'}</div>
+      </div>
+    `).join('');
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  loadHistory();
+</script>
+</body>
+</html>
